@@ -1,6 +1,6 @@
 {
-  "name": "SITE PRODUCTION",
-  "short_name": "SITE PRODUCTION",
+  "name": "Site Production",
+  "short_name": "Site Production",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
