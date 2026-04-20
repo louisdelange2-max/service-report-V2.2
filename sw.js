@@ -1,16 +1,18 @@
-const CACHE_NAME = 'site-production-v4-sync-v2';
+const CACHE_NAME = 'site-production-v3';
 const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icon-192.png',
-  './icon-512.png'
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
 self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(CORE_ASSETS.map(url => new Request(url, { cache: 'reload' })))).catch(() => null)
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(CORE_ASSETS.map(url => new Request(url, { cache: 'reload' }))))
+      .catch(() => null)
   );
 });
 
@@ -29,39 +31,48 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   const isSameOrigin = url.origin === self.location.origin;
 
-  if (request.mode === 'navigate') {
-    event.respondWith((async () => {
-      try {
-        const fresh = await fetch(request);
-        const cache = await caches.open(CACHE_NAME);
-        cache.put('./index.html', fresh.clone()).catch(() => null);
-        return fresh;
-      } catch (err) {
-        const cached = await caches.match('./index.html');
-        if (cached) return cached;
-        throw err;
-      }
-    })());
-    return;
-  }
-
   if (!isSameOrigin) {
     event.respondWith(fetch(request).catch(() => caches.match(request)));
     return;
   }
 
+  const isHtmlNav = request.mode === 'navigate';
+  const isDynamicAsset =
+    url.pathname.endsWith('.html') ||
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css') ||
+    url.pathname.endsWith('.json');
+
+  if (isHtmlNav || isDynamicAsset) {
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(request, { cache: 'no-store' });
+        if (fresh && fresh.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(request, fresh.clone()).catch(() => null);
+          if (isHtmlNav) cache.put('./index.html', fresh.clone()).catch(() => null);
+        }
+        return fresh;
+      } catch (err) {
+        return (await caches.match(request)) || (isHtmlNav ? await caches.match('./index.html') : null);
+      }
+    })());
+    return;
+  }
+
   event.respondWith((async () => {
     const cached = await caches.match(request);
-    const fetchPromise = fetch(request)
-      .then(async response => {
-        if (response && response.ok) {
-          const cache = await caches.open(CACHE_NAME);
-          cache.put(request, response.clone()).catch(() => null);
-        }
-        return response;
-      })
-      .catch(() => cached);
+    if (cached) return cached;
 
-    return cached || fetchPromise;
+    try {
+      const fresh = await fetch(request);
+      if (fresh && fresh.ok) {
+        const cache = await caches.open(CACHE_NAME);
+        cache.put(request, fresh.clone()).catch(() => null);
+      }
+      return fresh;
+    } catch (err) {
+      return cached;
+    }
   })());
 });
